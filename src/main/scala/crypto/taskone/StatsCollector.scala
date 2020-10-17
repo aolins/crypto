@@ -36,11 +36,9 @@ object StatsCollector extends App {
                case PartlyTranslated(a1, y, _, yOpt, c) if a1 == fromTwo  => PartlyTranslated(fromTwo, y, Some(actual._1._2), yOpt,c)
                case PartlyTranslated(y,a1, yOpt, _, c) if a1 == fromOne  => PartlyTranslated(y, fromOne, yOpt,Some(actual._1._1),c)
                case PartlyTranslated(y,a1, yOpt, _, c) if a1 == fromTwo  => PartlyTranslated(y, fromTwo, yOpt,Some(actual._1._2),c)
+               case xx => xx
            }
-
-
         }
-
         val filterAccidentallyTranslated = raw.filter(_ match {
             case PartlyTranslated(_,_,Some(_), Some(_),_) => true
             case _ => false
@@ -55,17 +53,31 @@ object StatsCollector extends App {
     def nextWaveFront(f:Front)(implicit exampleCount:Int):Front = {
 
         val element = f.head
+
+        def advanceWF(x: Char, y: Char, count: Int, nextTranslation: ((Char, Char), Int)) = {
+            val tempRemainingExemplar = element.remainingExemplar.filterNot(_._1 == nextTranslation._1)
+            val (newRemaining, additionalTranslated) = translateRemaining(x, y, nextTranslation, element.remaining.tail)
+            val newTranslated: C = ((nextTranslation._1, count) :: element.translated) ::: additionalTranslated
+            val newRemainExemplar = tempRemainingExemplar.filter(x => !additionalTranslated.find(_._1 == x._1).isDefined)
+            val newStats = (newTranslated ::: newRemaining.map(x =>
+                ((x.decryptedFrom.getOrElse(x.encryptedFrom), x.decryptedTo.getOrElse(x.encryptedTo)), x.count))
+                           )
+            val newDiff = countDiff((newStats, exampleCount))
+            WaveFrontElement(newTranslated, newRemaining, newRemainExemplar, newDiff)
+        }
+
         val newelement:WaveFrontElement = element.remaining.head match {
             case PartlyTranslated(x,y,None,None, count) => {
                 val nextTranslation = element.remainingExemplar.head
-                val (newRemaining, additionalTranslated) = translateRemaining(x,y,nextTranslation,element.remaining.tail)
-                val newTranslated:C = ((nextTranslation._1, count)::element.translated):::additionalTranslated
-                val newRemainExemplar = element.remainingExemplar.tail.filter(x => additionalTranslated.find(_._1 == x._1).isDefined)
-                val newStats = (newTranslated:::newRemaining.map(x=>
-                    ((x.decryptedFrom.getOrElse(x.encryptedFrom), x.decryptedTo.getOrElse(x.encryptedTo)),x.count))
-                               )
-                val newDiff = countDiff((newStats, exampleCount))
-                WaveFrontElement(newTranslated, newRemaining, newRemainExemplar, 0d)
+                advanceWF(x, y, count, nextTranslation)
+            }
+            case PartlyTranslated(x,y,Some(found),None, count) => {
+                val nextTranslation = element.remainingExemplar.find(_._1._1 == found).getOrElse(((found,y),count))
+                advanceWF(x, y, count, nextTranslation)
+            }
+            case PartlyTranslated(x,y,None,Some(found), count) => {
+                val nextTranslation = element.remainingExemplar.find(_._1._2 == found).getOrElse(((y,found),count))
+                advanceWF(x, y, count, nextTranslation)
             }
         }
 
